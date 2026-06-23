@@ -1,0 +1,23 @@
+name: Test project mapping chef to cinc without license
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install using chef project name (should map to cinc)
+        id: action
+        uses: .
+        with:
+          project: chef
+          channel: stable
+          omnitruckUrl: omnitruck.cinc.sh
+      - name: Assert cinc-client is installed (mapped from chef)
+        run: |
+          if ! command -v cinc-client &>/dev/null; then
+            echo "FAIL: cinc-client not found - project mapping from 'chef' to 'cinc' may have failed"
+            exit 1
+          fi
+          echo "PASS: cinc-client is installed via project mapping"
+          cinc-client --version
