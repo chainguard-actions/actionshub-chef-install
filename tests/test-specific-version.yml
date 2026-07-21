@@ -1,0 +1,72 @@
+name: Test specific version installation
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up fake curl and capture install args
+        run: |
+          mkdir -p "$HOME/.local/bin"
+
+          # Write a fake install script that records its arguments
+          cat > /tmp/fake-chef-install.sh << 'FAKESCRIPT'
+          #!/bin/sh
+          echo "INSTALL_ARGS: $@" > /tmp/chef-install-args.txt
+          while [ $# -gt 0 ]; do
+            case "$1" in
+              -c) echo "CHANNEL=$2" >> /tmp/chef-install-args.txt; shift 2 ;;
+              -P) echo "PROJECT=$2" >> /tmp/chef-install-args.txt; shift 2 ;;
+              -v) echo "VERSION=$2" >> /tmp/chef-install-args.txt; shift 2 ;;
+              *) shift ;;
+            esac
+          done
+          echo "Fake Chef install done"
+          exit 0
+          FAKESCRIPT
+          chmod +x /tmp/fake-chef-install.sh
+
+          # Write a fake curl that honors -o flag
+          cat > "$HOME/.local/bin/curl" << 'FAKECURL'
+          #!/bin/sh
+          out=""
+          prev=""
+          for arg in "$@"; do
+            case "$prev" in
+              -o|--output) out="$arg" ;;
+            esac
+            prev="$arg"
+          done
+          if [ -n "$out" ]; then
+            cat /tmp/fake-chef-install.sh > "$out"
+          else
+            cat /tmp/fake-chef-install.sh
+          fi
+          exit 0
+          FAKECURL
+          chmod +x "$HOME/.local/bin/curl"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - id: action
+        uses: .
+        with:
+          channel: stable
+          project: chef-workstation
+          version: '21.10.640'
+          omnitruckUrl: omnitruck.chef.io
+
+      - name: Assert version arg was passed correctly
+        run: |
+          echo "=== Install args ==="
+          cat /tmp/chef-install-args.txt || echo "(args file not found)"
+
+          VERSION=$(grep '^VERSION=' /tmp/chef-install-args.txt | cut -d= -f2)
+          echo "version: $VERSION"
+
+          if [ "$VERSION" != "21.10.640" ]; then
+            echo "FAIL: expected version '21.10.640', got '$VERSION'"
+            exit 1
+          fi
+          echo "PASS: version is '21.10.640'"

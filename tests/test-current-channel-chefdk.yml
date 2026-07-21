@@ -1,0 +1,80 @@
+name: Test current channel with chefdk project
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up fake curl and capture install args
+        run: |
+          mkdir -p "$HOME/.local/bin"
+
+          # Write a fake install script that records its arguments
+          cat > /tmp/fake-chef-install.sh << 'FAKESCRIPT'
+          #!/bin/sh
+          echo "INSTALL_ARGS: $@" > /tmp/chef-install-args.txt
+          while [ $# -gt 0 ]; do
+            case "$1" in
+              -c) echo "CHANNEL=$2" >> /tmp/chef-install-args.txt; shift 2 ;;
+              -P) echo "PROJECT=$2" >> /tmp/chef-install-args.txt; shift 2 ;;
+              -v) echo "VERSION=$2" >> /tmp/chef-install-args.txt; shift 2 ;;
+              *) shift ;;
+            esac
+          done
+          echo "Fake Chef install done"
+          exit 0
+          FAKESCRIPT
+          chmod +x /tmp/fake-chef-install.sh
+
+          # Write a fake curl that honors -o flag
+          cat > "$HOME/.local/bin/curl" << 'FAKECURL'
+          #!/bin/sh
+          out=""
+          prev=""
+          for arg in "$@"; do
+            case "$prev" in
+              -o|--output) out="$arg" ;;
+            esac
+            prev="$arg"
+          done
+          if [ -n "$out" ]; then
+            cat /tmp/fake-chef-install.sh > "$out"
+          else
+            cat /tmp/fake-chef-install.sh
+          fi
+          exit 0
+          FAKECURL
+          chmod +x "$HOME/.local/bin/curl"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - id: action
+        uses: .
+        with:
+          channel: current
+          project: chefdk
+          omnitruckUrl: omnitruck.chef.io
+
+      - name: Assert channel and project args were passed correctly
+        run: |
+          echo "=== Install args ==="
+          cat /tmp/chef-install-args.txt || echo "(args file not found)"
+
+          CHANNEL=$(grep '^CHANNEL=' /tmp/chef-install-args.txt | cut -d= -f2)
+          PROJECT=$(grep '^PROJECT=' /tmp/chef-install-args.txt | cut -d= -f2)
+
+          echo "channel: $CHANNEL"
+          echo "project: $PROJECT"
+
+          if [ "$CHANNEL" != "current" ]; then
+            echo "FAIL: expected channel 'current', got '$CHANNEL'"
+            exit 1
+          fi
+          echo "PASS: channel is 'current'"
+
+          if [ "$PROJECT" != "chefdk" ]; then
+            echo "FAIL: expected project 'chefdk', got '$PROJECT'"
+            exit 1
+          fi
+          echo "PASS: project is 'chefdk'"

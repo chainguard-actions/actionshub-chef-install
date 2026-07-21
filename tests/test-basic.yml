@@ -1,0 +1,63 @@
+name: Test basic usage - chef-workstation stable
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up fake curl to intercept install script download
+        run: |
+          mkdir -p "$HOME/.local/bin"
+
+          # Write a fake install script that will be "downloaded"
+          cat > /tmp/fake-chef-install.sh << 'FAKESCRIPT'
+          #!/bin/sh
+          echo "Fake Chef install script called with args: $@"
+          # Parse args to verify they are passed correctly
+          while [ $# -gt 0 ]; do
+            case "$1" in
+              -c) echo "Channel: $2"; shift 2 ;;
+              -P) echo "Project: $2"; shift 2 ;;
+              -v) echo "Version: $2"; shift 2 ;;
+              *) shift ;;
+            esac
+          done
+          echo "Chef install completed successfully (fake)"
+          exit 0
+          FAKESCRIPT
+          chmod +x /tmp/fake-chef-install.sh
+
+          # Write a fake curl that honors -o flag
+          cat > "$HOME/.local/bin/curl" << 'FAKECURL'
+          #!/bin/sh
+          out=""
+          prev=""
+          for arg in "$@"; do
+            case "$prev" in
+              -o|--output) out="$arg" ;;
+            esac
+            prev="$arg"
+          done
+          if [ -n "$out" ]; then
+            cat /tmp/fake-chef-install.sh > "$out"
+          else
+            cat /tmp/fake-chef-install.sh
+          fi
+          exit 0
+          FAKECURL
+          chmod +x "$HOME/.local/bin/curl"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - id: action
+        uses: .
+        with:
+          channel: stable
+          project: chef-workstation
+          omnitruckUrl: omnitruck.chef.io
+
+      - name: Assert action completed successfully
+        run: |
+          echo "Action completed without error"
+          echo "PASS"

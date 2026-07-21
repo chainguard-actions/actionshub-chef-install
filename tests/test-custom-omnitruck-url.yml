@@ -1,0 +1,61 @@
+name: Test custom omnitruckUrl
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up fake curl that records the URL it was called with
+        run: |
+          mkdir -p "$HOME/.local/bin"
+
+          # Write a fake install script
+          cat > /tmp/fake-chef-install.sh << 'FAKESCRIPT'
+          #!/bin/sh
+          echo "Fake Chef install done"
+          exit 0
+          FAKESCRIPT
+          chmod +x /tmp/fake-chef-install.sh
+
+          # Write a fake curl that records the URL and honors -o flag
+          cat > "$HOME/.local/bin/curl" << 'FAKECURL'
+          #!/bin/sh
+          out=""
+          prev=""
+          for arg in "$@"; do
+            case "$prev" in
+              -o|--output) out="$arg" ;;
+            esac
+            prev="$arg"
+          done
+          # Record all args for inspection
+          echo "$@" > /tmp/curl-args.txt
+          if [ -n "$out" ]; then
+            cat /tmp/fake-chef-install.sh > "$out"
+          else
+            cat /tmp/fake-chef-install.sh
+          fi
+          exit 0
+          FAKECURL
+          chmod +x "$HOME/.local/bin/curl"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - id: action
+        uses: .
+        with:
+          channel: stable
+          project: chef-workstation
+          omnitruckUrl: custom.omnitruck.example.com
+
+      - name: Assert custom omnitruckUrl was used in curl call
+        run: |
+          echo "=== Curl args ==="
+          cat /tmp/curl-args.txt || echo "(curl args file not found)"
+
+          if ! grep -q 'custom.omnitruck.example.com' /tmp/curl-args.txt; then
+            echo "FAIL: expected custom omnitruckUrl 'custom.omnitruck.example.com' in curl args"
+            exit 1
+          fi
+          echo "PASS: custom omnitruckUrl was used"
