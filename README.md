@@ -9,6 +9,7 @@ Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at
 | Version | Tag | Upstream commit |
 |---------|-----|-----------------|
 | 6.0.0 | [`6.0.0`](https://github.com/chainguard-actions/actionshub-chef-install/tree/6.0.0) | [`f3b3594`](https://github.com/actionshub/chef-install/commit/f3b35943a257c25f3ca69e3b773fa4e0e99b58d6) |
+| v1.0.0 | [`v1.0.0`](https://github.com/chainguard-actions/actionshub-chef-install/tree/v1.0.0) | [`0638058`](https://github.com/actionshub/chef-install/commit/0638058bd37cc5465b5dcd38355eee8a24900789) |
 
 ## Privacy
 
