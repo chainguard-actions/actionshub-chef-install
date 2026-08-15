@@ -79,8 +79,8 @@ runs:
         if [ -z "$VERSION" ] && { [ "$INSTALL_PROJECT" = "chef-workstation" ] || [ "$INSTALL_PROJECT" = "cinc-workstation" ]; }; then
           VERSION="latest"
         fi
-        VERSION_ARGS=()
-        [ -n "$VERSION" ] && VERSION_ARGS=(-v "$VERSION")
+        VERSION_FLAG=""
+        [ -n "$VERSION" ] && VERSION_FLAG="-v ${VERSION}"
 
         if [ -n "$LICENSE" ]; then
           if [ "$CHEF_DOWNLOAD_URL" = "chefdownload-community.chef.io" ] && [ "$CHANNEL" != "stable" ]; then
@@ -138,7 +138,7 @@ runs:
           exit 1
         fi
 
-        sudo bash "$TEMP_SCRIPT" -c "${CHANNEL}" -P "${INSTALL_PROJECT}" "${VERSION_ARGS[@]+"${VERSION_ARGS[@]}"}"
+        sudo bash "$TEMP_SCRIPT" -c "${CHANNEL}" -P "${INSTALL_PROJECT}" ${VERSION_FLAG:+"${VERSION_FLAG}"}
     - name: Install Chef (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
@@ -234,7 +234,7 @@ runs:
         } else {
           $installRoot = "C:\opscode\$installProject\"
         }
-        $safePath = ($installRoot -replace '[\r\n]', '') + "bin"
+        $safePath = ("$($installRoot)bin" -replace '[\r\n]', '')
         $safePath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 branding:
   icon: 'download'

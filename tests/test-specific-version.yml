@@ -1,0 +1,83 @@
+name: Test installing a specific version
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up fake curl and install script
+        run: |
+          mkdir -p /tmp/fake-bin
+
+          # Create a fake install script that records its arguments
+          printf '%s\n' '#!/bin/bash' \
+            'echo "FAKE_INSTALL called with args: $@" > /tmp/install-args.txt' \
+            'exit 0' > /tmp/fake-cinc-install.sh
+          chmod +x /tmp/fake-cinc-install.sh
+
+          # Create a fake curl that serves the fake install script
+          printf '%s\n' \
+            '#!/bin/sh' \
+            'out=""' \
+            'dump_header=""' \
+            'write_out=""' \
+            'prev=""' \
+            'for arg in "$@"; do' \
+            '  case "$prev" in' \
+            '    -o|--output) out="$arg" ;;' \
+            '    --dump-header) dump_header="$arg" ;;' \
+            '    --write-out|-w) write_out="$arg" ;;' \
+            '  esac' \
+            '  prev="$arg"' \
+            'done' \
+            'effective_url=""' \
+            'for arg in "$@"; do' \
+            '  case "$arg" in' \
+            '    http*) effective_url="$arg" ;;' \
+            '  esac' \
+            'done' \
+            'if [ -n "$dump_header" ]; then' \
+            '  printf "HTTP/1.1 200 OK\r\n\r\n" > "$dump_header"' \
+            'fi' \
+            'case "$effective_url" in' \
+            '  *omnitruck.cinc.sh*install.sh*)' \
+            '    if [ -n "$out" ]; then' \
+            '      cat /tmp/fake-cinc-install.sh > "$out"' \
+            '    else' \
+            '      cat /tmp/fake-cinc-install.sh' \
+            '    fi' \
+            '    if [ -n "$write_out" ]; then' \
+            '      printf "200 %s" "$effective_url"' \
+            '    fi' \
+            '    exit 0' \
+            '    ;;' \
+            'esac' \
+            'exec /usr/bin/curl "$@"' > /tmp/fake-bin/curl
+          chmod +x /tmp/fake-bin/curl
+          echo "/tmp/fake-bin" >> "$GITHUB_PATH"
+
+      - name: Run action with specific version
+        id: action
+        uses: .
+        with:
+          project: cinc-workstation
+          channel: stable
+          version: '23.10.1042'
+          omnitruckUrl: omnitruck.cinc.sh
+
+      - name: Assert install was called with specific version flag
+        run: |
+          echo "Checking install was called with version flag..."
+          if [ ! -f /tmp/install-args.txt ]; then
+            echo "FAIL: install script was never called"
+            exit 1
+          fi
+          echo "Install args:"
+          cat /tmp/install-args.txt
+          if ! grep -q "\-v 23.10.1042" /tmp/install-args.txt; then
+            echo "FAIL: expected -v 23.10.1042 in install args"
+            exit 1
+          fi
+          echo "PASS: install script was called with correct version flag"
