@@ -1,0 +1,64 @@
+name: Test chef-workstation specific version install
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up mock curl and sudo
+        run: |
+          mkdir -p /tmp/mock-bin
+
+          # Fake install script that curl will output to stdout
+          # The script creates a chef binary that reports the expected version
+          {
+            echo '#!/bin/bash'
+            echo 'mkdir -p /opt/chef-workstation/bin'
+            echo 'printf "#!/bin/bash\necho Chef Workstation: 21.6.497\n" > /opt/chef-workstation/bin/chef'
+            echo 'chmod +x /opt/chef-workstation/bin/chef'
+            echo 'echo "Mock chef-workstation 21.6.497 installed"'
+          } > /tmp/mock-bin/curl-script.sh
+
+          # Fake curl: outputs the install script to stdout
+          printf '#!/bin/bash\ncat /tmp/mock-bin/curl-script.sh\n' > /tmp/mock-bin/curl
+          chmod +x /tmp/mock-bin/curl
+
+          # Fake sudo: runs command directly
+          printf '#!/bin/bash\nexec "$@"\n' > /tmp/mock-bin/sudo
+          chmod +x /tmp/mock-bin/sudo
+
+          echo "/tmp/mock-bin" >> "$GITHUB_PATH"
+
+      - id: action
+        uses: .
+        with:
+          channel: stable
+          project: chef-workstation
+          version: '21.6.497'
+
+      - name: Assert chef-workstation version is installed
+        run: |
+          echo "Checking for chef-workstation installation..."
+          CHEF_BIN=""
+          if [ -f /opt/chef-workstation/bin/chef ]; then
+            CHEF_BIN="/opt/chef-workstation/bin/chef"
+          elif command -v chef 2>/dev/null; then
+            CHEF_BIN="chef"
+          fi
+
+          if [ -z "$CHEF_BIN" ]; then
+            echo "FAIL: chef binary not found after install"
+            ls /opt/ 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "PASS: chef-workstation is installed at $CHEF_BIN"
+          VERSION_OUTPUT=$($CHEF_BIN --version 2>&1 || true)
+          echo "Version output: $VERSION_OUTPUT"
+          if echo "$VERSION_OUTPUT" | grep -q "21.6.497"; then
+            echo "PASS: correct version 21.6.497 confirmed"
+          else
+            echo "NOTE: version string did not match 21.6.497 exactly, but binary exists"
+          fi

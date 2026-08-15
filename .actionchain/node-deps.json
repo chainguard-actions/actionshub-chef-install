@@ -1,0 +1,9 @@
+{
+  "status": "bundled",
+  "entries": [
+    {
+      "path": "index.js",
+      "status": "bundled"
+    }
+  ]
+}

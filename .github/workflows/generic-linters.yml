@@ -1,0 +1,30 @@
+---
+name: generic-linters
+
+'on':
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  yamllint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Run yaml Lint
+        uses: actionshub/yamllint@184f72d121829c82b16569eccceb713b2c19d89d # main
+
+  mdl:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Run Markdown Lint
+        uses: actionshub/markdownlint@6c82ff529253530dfbf75c37570876c52692835f # main
+        with:
+          filesToIgnoreRegex: "node_modules\\/.*"

@@ -1,0 +1,53 @@
+name: Test chef-workstation current channel install
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up mock curl and sudo
+        run: |
+          mkdir -p /tmp/mock-bin
+
+          # Fake install script that curl will output to stdout
+          {
+            echo '#!/bin/bash'
+            echo 'mkdir -p /opt/chef-workstation/bin'
+            echo 'printf "#!/bin/bash\necho Chef Workstation: latest\n" > /opt/chef-workstation/bin/chef'
+            echo 'chmod +x /opt/chef-workstation/bin/chef'
+            echo 'echo "Mock chef-workstation (current channel) installed"'
+          } > /tmp/mock-bin/curl-script.sh
+
+          # Fake curl: outputs the install script to stdout
+          printf '#!/bin/bash\ncat /tmp/mock-bin/curl-script.sh\n' > /tmp/mock-bin/curl
+          chmod +x /tmp/mock-bin/curl
+
+          # Fake sudo: runs command directly
+          printf '#!/bin/bash\nexec "$@"\n' > /tmp/mock-bin/sudo
+          chmod +x /tmp/mock-bin/sudo
+
+          echo "/tmp/mock-bin" >> "$GITHUB_PATH"
+
+      - id: action
+        uses: .
+        with:
+          channel: current
+          project: chef-workstation
+          version: 'latest'
+
+      - name: Assert chef-workstation from current channel is installed
+        run: |
+          echo "Checking for chef-workstation installation (current channel)..."
+          if [ -f /opt/chef-workstation/bin/chef ]; then
+            echo "PASS: chef-workstation found at /opt/chef-workstation/bin/chef"
+            /opt/chef-workstation/bin/chef --version || true
+          elif command -v chef 2>/dev/null; then
+            echo "PASS: chef binary is available in PATH"
+            chef --version || true
+          else
+            echo "FAIL: chef-workstation binary not found after current channel install"
+            ls /opt/ 2>/dev/null || true
+            exit 1
+          fi

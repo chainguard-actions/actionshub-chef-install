@@ -1,0 +1,84 @@
+name: Test latest version input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up fake curl and install script
+        run: |
+          # Create a fake install.sh that records the arguments it receives
+          cat > /tmp/fake-install.sh << 'EOF'
+          #!/bin/bash
+          echo "FAKE_INSTALL_CALLED" > /tmp/install-called.txt
+          echo "ARGS: $@" >> /tmp/install-called.txt
+          echo "Chef install script called with: $@"
+          EOF
+          chmod +x /tmp/fake-install.sh
+
+          # Create a fake curl that serves the fake install script
+          # Supports both "curl URL | bash" and hardened "curl -o FILE URL" forms
+          mkdir -p /tmp/fake-bin
+          cat > /tmp/fake-bin/curl << 'EOF'
+          #!/bin/sh
+          out=""
+          prev=""
+          for arg in "$@"; do
+            case "$prev" in
+              -o|--output) out="$arg" ;;
+            esac
+            prev="$arg"
+          done
+          case "$*" in
+            *omnitruck.chef.io/install.sh*)
+              if [ -n "$out" ]; then
+                cat /tmp/fake-install.sh > "$out"
+              else
+                cat /tmp/fake-install.sh
+              fi
+              exit 0
+              ;;
+          esac
+          exec /usr/bin/curl "$@"
+          EOF
+          chmod +x /tmp/fake-bin/curl
+          echo "/tmp/fake-bin" >> "$GITHUB_PATH"
+
+      - id: action
+        uses: .
+        with:
+          channel: stable
+          project: chef-workstation
+          version: latest
+
+      - name: Assert install script was called
+        run: |
+          if [ ! -f /tmp/install-called.txt ]; then
+            echo "FAIL: install script was never called"
+            exit 1
+          fi
+          echo "Install script was called:"
+          cat /tmp/install-called.txt
+          echo "PASS"
+
+      - name: Assert version flag is 'latest'
+        run: |
+          ARGS=$(cat /tmp/install-called.txt)
+          echo "actual args: $ARGS"
+          if ! echo "$ARGS" | grep -q "\-v latest"; then
+            echo "FAIL: expected '-v latest' in args"
+            exit 1
+          fi
+          echo "PASS: version=latest found"
+
+      - name: Assert no default version override
+        run: |
+          ARGS=$(cat /tmp/install-called.txt)
+          echo "actual args: $ARGS"
+          if echo "$ARGS" | grep -q "\-v 21.6.497"; then
+            echo "FAIL: default version 21.6.497 should not be used when version=latest is specified"
+            exit 1
+          fi
+          echo "PASS: default version not used"
