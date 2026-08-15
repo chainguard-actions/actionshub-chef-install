@@ -1,0 +1,50 @@
+name: Test specific version installation
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up fake curl
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          cp "$GITHUB_WORKSPACE/tests/fixtures/fake-curl.sh" "$HOME/.local/bin/curl"
+          chmod +x "$HOME/.local/bin/curl"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install Chef with specific version
+        uses: .
+        with:
+          channel: stable
+          project: chef-workstation
+          version: "23.10.1041"
+
+      - name: Assert install args recorded with correct version
+        run: |
+          echo "=== Recorded install args ==="
+          cat /tmp/chef-install-args.txt || true
+
+          CHANNEL=$(grep '^channel=' /tmp/chef-install-args.txt | cut -d= -f2)
+          PROJECT=$(grep '^project=' /tmp/chef-install-args.txt | cut -d= -f2)
+          VERSION=$(grep '^version=' /tmp/chef-install-args.txt | cut -d= -f2)
+
+          echo "channel: $CHANNEL"
+          echo "project: $PROJECT"
+          echo "version: $VERSION"
+
+          if [ "$CHANNEL" != "stable" ]; then
+            echo "FAIL: expected channel=stable, got '$CHANNEL'"
+            exit 1
+          fi
+          if [ "$PROJECT" != "chef-workstation" ]; then
+            echo "FAIL: expected project=chef-workstation, got '$PROJECT'"
+            exit 1
+          fi
+          if [ "$VERSION" != "23.10.1041" ]; then
+            echo "FAIL: expected version=23.10.1041, got '$VERSION'"
+            exit 1
+          fi
+          echo "PASS"

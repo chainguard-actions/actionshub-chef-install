@@ -1,0 +1,51 @@
+name: Test custom channel and project
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up fake curl
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          cp "$GITHUB_WORKSPACE/tests/fixtures/fake-curl.sh" "$HOME/.local/bin/curl"
+          chmod +x "$HOME/.local/bin/curl"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install Chef (current channel, chefdk project)
+        uses: .
+        with:
+          channel: current
+          project: chefdk
+
+      - name: Assert install args recorded
+        run: |
+          echo "=== Recorded install args ==="
+          cat /tmp/chef-install-args.txt || true
+
+          CHANNEL=$(grep '^channel=' /tmp/chef-install-args.txt | cut -d= -f2)
+          PROJECT=$(grep '^project=' /tmp/chef-install-args.txt | cut -d= -f2)
+          VERSION=$(grep '^version=' /tmp/chef-install-args.txt | cut -d= -f2)
+
+          echo "channel: $CHANNEL"
+          echo "project: $PROJECT"
+          echo "version: $VERSION"
+
+          if [ "$CHANNEL" != "current" ]; then
+            echo "FAIL: expected channel=current, got '$CHANNEL'"
+            exit 1
+          fi
+          if [ "$PROJECT" != "chefdk" ]; then
+            echo "FAIL: expected project=chefdk, got '$PROJECT'"
+            exit 1
+          fi
+          # For chefdk with no version specified, VERSION_FLAG should be empty
+          # (the action only defaults to "latest" for chef-workstation)
+          if [ -n "$VERSION" ]; then
+            echo "FAIL: expected empty version for chefdk with no version input, got '$VERSION'"
+            exit 1
+          fi
+          echo "PASS"

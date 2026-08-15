@@ -1,0 +1,99 @@
+name: Test chef-workstation install from current channel
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up mock curl and sudo
+        run: |
+          # Create a mock install script that will be "downloaded"
+          mkdir -p /tmp/mock-chef-bin
+          cat > /tmp/mock-chef-bin/mock-install.sh << 'EOF'
+          #!/bin/bash
+          echo "Mock Chef installer running with args: $@"
+          mkdir -p /opt/chef-workstation/bin
+          cat > /opt/chef-workstation/bin/chef << 'CHEFEOF'
+          #!/bin/bash
+          echo "Chef Workstation 25.0.0"
+          CHEFEOF
+          chmod +x /opt/chef-workstation/bin/chef
+          cat > /opt/chef-workstation/bin/chef-run << 'CHEFEOF'
+          #!/bin/bash
+          echo "Chef Workstation 25.0.0"
+          CHEFEOF
+          chmod +x /opt/chef-workstation/bin/chef-run
+          ln -sf /opt/chef-workstation/bin/chef /usr/local/bin/chef 2>/dev/null || true
+          ln -sf /opt/chef-workstation/bin/chef-run /usr/local/bin/chef-run 2>/dev/null || true
+          echo "Mock Chef installation complete"
+          EOF
+          chmod +x /tmp/mock-chef-bin/mock-install.sh
+
+          # Create a mock curl that returns our install script
+          cat > /tmp/mock-chef-bin/curl << 'EOF'
+          #!/bin/bash
+          # Mock curl - honor -o FILE so both "curl | bash" and
+          # "curl -o file; bash file" install forms work.
+          out=""; prev=""
+          for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; prev="$a"; done
+          if [ -n "$out" ]; then cat /tmp/mock-chef-bin/mock-install.sh > "$out"
+          else cat /tmp/mock-chef-bin/mock-install.sh; fi
+          EOF
+          chmod +x /tmp/mock-chef-bin/curl
+
+          # Create a mock sudo that just runs the command directly
+          cat > /tmp/mock-chef-bin/sudo << 'EOF'
+          #!/bin/bash
+          exec "$@"
+          EOF
+          chmod +x /tmp/mock-chef-bin/sudo
+
+          # Prepend our mock bin dir to PATH
+          echo "/tmp/mock-chef-bin" >> "$GITHUB_PATH"
+
+      - name: Install Chef workstation from current channel (mocked)
+        id: action
+        uses: .
+        with:
+          channel: current
+          project: chef-workstation
+
+      - name: Assert chef binary exists after current channel install
+        run: |
+          echo "Checking for chef binaries after current channel install..."
+          echo "PATH: $PATH"
+          ls /opt/chef-workstation/bin/ 2>/dev/null || echo "No /opt/chef-workstation/bin/"
+
+          if command -v chef-run >/dev/null 2>&1; then
+            echo "PASS: chef-run found in PATH"
+          elif command -v chef >/dev/null 2>&1; then
+            echo "PASS: chef found in PATH"
+          elif [ -f /opt/chef-workstation/bin/chef-run ]; then
+            echo "PASS: chef-run found at /opt/chef-workstation/bin/chef-run"
+          elif [ -f /opt/chef-workstation/bin/chef ]; then
+            echo "PASS: chef found at /opt/chef-workstation/bin/chef"
+          else
+            echo "FAIL: no chef binary found after install from current channel"
+            exit 1
+          fi
+
+      - name: Assert chef version command works
+        run: |
+          if command -v chef-run >/dev/null 2>&1; then
+            chef-run --version
+            echo "PASS: chef-run --version succeeded"
+          elif command -v chef >/dev/null 2>&1; then
+            chef --version
+            echo "PASS: chef --version succeeded"
+          elif [ -f /opt/chef-workstation/bin/chef-run ]; then
+            /opt/chef-workstation/bin/chef-run --version
+            echo "PASS: /opt/chef-workstation/bin/chef-run --version succeeded"
+          elif [ -f /opt/chef-workstation/bin/chef ]; then
+            /opt/chef-workstation/bin/chef --version
+            echo "PASS: /opt/chef-workstation/bin/chef --version succeeded"
+          else
+            echo "FAIL: no chef binary found to run version check"
+            exit 1
+          fi

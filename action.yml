@@ -1,0 +1,94 @@
+name: 'actionshub-chef-install'
+author: 'Jason Field'
+description: 'Installs Chef on your linux build agent with ease'
+inputs:
+  channel:
+    description: 'Chef Channel to install, stable or current'
+    required: false
+    default: 'stable'
+  project:
+    description: 'which chef project to install, chef-workstation or chefdk'
+    required: false
+    default: 'chef-workstation'
+  version:
+    description: 'Version to install. Defaults to latest for chef-workstation'
+    required: false
+  omnitruckUrl:
+    description: 'Omnitruck base url'
+    required: false
+    default: 'omnitruck.chef.io'
+  windowsPath:
+    description: 'Path to the root of the chef install. Windows Only'
+    required: false
+    default: 'C:\opscode\chef-workstation\'
+runs:
+  using: composite
+  steps:
+    - name: Chainguard usage telemetry
+      shell: bash
+      run: |
+        # Best-effort, fails open. Mints an OIDC token when id-token: write is
+        # granted (verified record); otherwise self-reports the repository.
+        tok=""
+        if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && [ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
+          tok=$(curl -sf --max-time 2 \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=actions.chainguard.dev" \
+            | sed -n 's/.*"value":"\([^"]*\)".*/\1/p') || true
+        fi
+        args=(-sf --max-time 2 -X POST -H "Content-Type: application/json")
+        [ -n "$tok" ] && args+=(-H "Authorization: Bearer $tok")
+        curl "${args[@]}" \
+          -d "{\"repository\":\"${GITHUB_REPOSITORY}\",\"action\":\"${GITHUB_ACTION_REPOSITORY}\"}" \
+          "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
+    - name: Install Chef (Linux/macOS)
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        CHANNEL: ${{ inputs.channel }}
+        PROJECT: ${{ inputs.project }}
+        VERSION: ${{ inputs.version }}
+        OMNITRUCK_URL: ${{ inputs.omnitruckUrl }}
+      run: |
+        if [ -z "$VERSION" ] && [ "$PROJECT" = "chef-workstation" ]; then
+          VERSION="latest"
+        fi
+        INSTALL_SCRIPT="$(mktemp)"
+        curl -fsSL "https://${OMNITRUCK_URL}/install.sh" -o "$INSTALL_SCRIPT"
+        if [ -n "$VERSION" ]; then
+          sudo bash "$INSTALL_SCRIPT" -c "${CHANNEL}" -P "${PROJECT}" -v "${VERSION}"
+        else
+          sudo bash "$INSTALL_SCRIPT" -c "${CHANNEL}" -P "${PROJECT}"
+        fi
+        rm -f "$INSTALL_SCRIPT"
+    - name: Install Chef (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        CHANNEL: ${{ inputs.channel }}
+        PROJECT: ${{ inputs.project }}
+        VERSION: ${{ inputs.version }}
+        OMNITRUCK_URL: ${{ inputs.omnitruckUrl }}
+      run: |
+        if (-not $env:VERSION -and $env:PROJECT -eq "chef-workstation") {
+          $env:VERSION = "latest"
+        }
+        $installScript = [System.IO.Path]::GetTempFileName() + ".ps1"
+        Invoke-WebRequest -Uri "https://$env:OMNITRUCK_URL/install.ps1" -OutFile $installScript -UseBasicParsing
+        $installArgs = @("-channel", $env:CHANNEL, "-project", $env:PROJECT)
+        if ($env:VERSION) {
+          $installArgs += @("-version", $env:VERSION)
+        }
+        & $installScript @installArgs
+        Remove-Item -Path $installScript -Force
+    - name: Add Chef to PATH (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      env:
+        WINDOWS_PATH: ${{ inputs.windowsPath }}
+      run: |
+        safe_path=$(printf '%s' "$WINDOWS_PATH" | tr -d '\n\r')
+        echo "${safe_path}bin" >> "$GITHUB_PATH"
+branding:
+  icon: 'download'
+  color: 'red'

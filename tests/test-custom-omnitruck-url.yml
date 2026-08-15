@@ -1,0 +1,70 @@
+name: Test custom omnitruckUrl
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up fake curl that matches custom omnitruck URL
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          # Write a custom fake curl that matches any install.sh URL
+          cat > "$HOME/.local/bin/curl" << 'CURLEOF'
+          #!/bin/sh
+          # Fake curl: intercepts any install.sh request regardless of host
+          out=""
+          prev=""
+          for arg in "$@"; do
+            case "$prev" in
+              -o|--output) out="$arg" ;;
+            esac
+            prev="$arg"
+          done
+
+          case "$*" in
+            *install.sh*)
+              PAYLOAD="$GITHUB_WORKSPACE/tests/fixtures/fake-install.sh"
+              if [ -n "$out" ]; then
+                cat "$PAYLOAD" > "$out"
+              else
+                cat "$PAYLOAD"
+              fi
+              exit 0
+              ;;
+          esac
+
+          exec /usr/bin/curl "$@"
+          CURLEOF
+          chmod +x "$HOME/.local/bin/curl"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install Chef with custom omnitruckUrl
+        uses: .
+        with:
+          channel: stable
+          project: chef-workstation
+          omnitruckUrl: "custom-omnitruck.example.com"
+
+      - name: Assert install completed successfully
+        run: |
+          echo "=== Recorded install args ==="
+          cat /tmp/chef-install-args.txt || true
+
+          CHANNEL=$(grep '^channel=' /tmp/chef-install-args.txt | cut -d= -f2)
+          PROJECT=$(grep '^project=' /tmp/chef-install-args.txt | cut -d= -f2)
+
+          echo "channel: $CHANNEL"
+          echo "project: $PROJECT"
+
+          if [ "$CHANNEL" != "stable" ]; then
+            echo "FAIL: expected channel=stable, got '$CHANNEL'"
+            exit 1
+          fi
+          if [ "$PROJECT" != "chef-workstation" ]; then
+            echo "FAIL: expected project=chef-workstation, got '$PROJECT'"
+            exit 1
+          fi
+          echo "PASS: custom omnitruckUrl accepted and install ran"
